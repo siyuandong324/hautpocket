@@ -1,0 +1,60 @@
+name: Build Hautpocket APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.5'
+
+      - name: Auto-locate Project and Build APK
+        run: |
+          for z in *.zip; do
+            if [ -f "$z" ]; then
+              unzip -o "$z"
+            fi
+          done
+
+          python3 - << 'PY'
+          from pathlib import Path
+          for kt in Path(".").rglob("MainActivity.kt"):
+              txt = kt.read_text(encoding="utf-8")
+              txt = txt.replace(
+                  'Pattern.compile("id=["\']csrftoken["\'][^>]*value=["\']([^"\']+)["\']")',
+                  'Pattern.compile("id=[\'\\"]csrftoken[\'\\"][^>]*value=[\'\\"]([^\'\\"]+)[\'\\"]")'
+              )
+              txt = txt.replace('loginResp.contains("id="tips"")', 'loginResp.contains("id=\\"tips\\"")')
+              kt.write_text(txt, encoding="utf-8")
+          PY
+
+          GRADLE_FILE=$(find . -name "settings.gradle.kts" | head -n 1)
+          if [ -z "$GRADLE_FILE" ]; then
+            echo "错误：仓库里还没有上传代码文件，请先去 Code 标签页上传解压后的文件！"
+            exit 1
+          fi
+          PROJECT_DIR=$(dirname "$GRADLE_FILE")
+          cd "$PROJECT_DIR"
+          gradle assembleDebug --no-daemon
+
+      - name: Upload Compiled APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hautpocket-APK
+          path: "**/*.apk"
